@@ -10,9 +10,9 @@ export default class Board extends React.Component {
     const clients = this.getClients();
     this.state = {
       clients: {
-        backlog: clients.filter(client => !client.status || client.status === 'backlog'),
-        inProgress: clients.filter(client => client.status && client.status === 'in-progress'),
-        complete: clients.filter(client => client.status && client.status === 'complete'),
+      backlog: clients.map(client => ({ ...client, status: 'backlog' })),
+      inProgress: [],
+      complete: [],
       }
     }
     this.swimlanes = {
@@ -50,6 +50,60 @@ export default class Board extends React.Component {
       status: companyDetails[3],
     }));
   }
+  componentDidMount() {
+  const containers = [
+    this.swimlanes.backlog.current,
+    this.swimlanes.inProgress.current,
+    this.swimlanes.complete.current,
+  ];
+
+  this.dragula = Dragula(containers);
+
+  // Remember exactly where the card started (which container, and which
+  // element it was sitting before), so we can undo Dragula's physical move.
+  this.dragula.on('drag', (el, source) => {
+    this.dragOrigin = { el, parent: source, nextSibling: el.nextSibling };
+  });
+
+  this.dragula.on('drop', (el) => {
+    this.handleDrop(el);
+  });
+  }
+    handleDrop(el) {
+  const allClients = [
+    ...this.state.clients.backlog,
+    ...this.state.clients.inProgress,
+    ...this.state.clients.complete,
+  ];
+  const clientsById = {};
+  allClients.forEach(client => {
+    clientsById[client.id] = client;
+  });
+
+  const laneStatus = {
+    backlog: 'backlog',
+    inProgress: 'in-progress',
+    complete: 'complete',
+  };
+
+  const newClients = {};
+  Object.keys(this.swimlanes).forEach(laneKey => {
+    const container = this.swimlanes[laneKey].current;
+    const status = laneStatus[laneKey];
+    newClients[laneKey] = Array.from(container.children)
+      .map(cardEl => cardEl.dataset.id)
+      .map(id => ({ ...clientsById[id], status }));
+  });
+
+  // Undo Dragula's direct DOM move, putting the card back where it
+  // started. setState below will now trigger React to move it to its
+  // real new spot itself, instead of conflicting with Dragula.
+  if (this.dragOrigin && this.dragOrigin.el === el) {
+    this.dragOrigin.parent.insertBefore(el, this.dragOrigin.nextSibling);
+  }
+
+  this.setState({ clients: newClients });
+}
   renderSwimlane(name, clients, ref) {
     return (
       <Swimlane name={name} clients={clients} dragulaRef={ref}/>
