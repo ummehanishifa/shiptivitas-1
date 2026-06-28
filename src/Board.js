@@ -10,9 +10,9 @@ export default class Board extends React.Component {
     const clients = this.getClients();
     this.state = {
       clients: {
-      backlog: clients.map(client => ({ ...client, status: 'backlog' })),
-      inProgress: [],
-      complete: [],
+        backlog: [],
+        inProgress: [],
+        complete: [],
       }
     }
     this.swimlanes = {
@@ -51,24 +51,31 @@ export default class Board extends React.Component {
     }));
   }
   componentDidMount() {
-  const containers = [
-    this.swimlanes.backlog.current,
-    this.swimlanes.inProgress.current,
-    this.swimlanes.complete.current,
-  ];
+  fetch('http://localhost:3001/api/v1/clients')
+    .then(res => res.json())
+    .then(clients => {
+      const backlog = clients
+        .filter(c => c.status === 'backlog')
+        .sort((a, b) => a.priority - b.priority);
+      const inProgress = clients
+        .filter(c => c.status === 'in-progress')
+        .sort((a, b) => a.priority - b.priority);
+      const complete = clients
+        .filter(c => c.status === 'complete')
+        .sort((a, b) => a.priority - b.priority);
 
-  this.dragula = Dragula(containers);
-
-  // Remember exactly where the card started (which container, and which
-  // element it was sitting before), so we can undo Dragula's physical move.
-  this.dragula.on('drag', (el, source) => {
-    this.dragOrigin = { el, parent: source, nextSibling: el.nextSibling };
-  });
-
-  this.dragula.on('drop', (el) => {
-    this.handleDrop(el);
-  });
-  }
+      this.setState({ clients: { backlog, inProgress, complete } }, () => {
+        // Set up Dragula after state is loaded
+        const containers = [
+          this.swimlanes.backlog.current,
+          this.swimlanes.inProgress.current,
+          this.swimlanes.complete.current,
+        ];
+        this.dragula = Dragula(containers);
+        this.dragula.on('drop', () => this.handleDrop());
+      });
+    });
+}
     handleDrop(el) {
   const allClients = [
     ...this.state.clients.backlog,
@@ -102,7 +109,21 @@ export default class Board extends React.Component {
     this.dragOrigin.parent.insertBefore(el, this.dragOrigin.nextSibling);
   }
 
-  this.setState({ clients: newClients });
+ // Save each client's new status and priority to the database
+Object.keys(newClients).forEach((laneKey) => {
+  newClients[laneKey].forEach((client, index) => {
+    fetch(`http://localhost:3001/api/v1/clients/${client.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        status: client.status,
+        priority: index + 1,
+      }),
+    });
+  });
+});
+
+this.setState({ clients: newClients });
 }
   renderSwimlane(name, clients, ref) {
     return (
